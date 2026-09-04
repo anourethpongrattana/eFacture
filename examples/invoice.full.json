@@ -1,0 +1,108 @@
+{
+  "invoiceNumber": "F-2026-0142",
+  "type": "380",
+  "issueDate": "2026-09-04",
+  "dueDate": "2026-10-19",
+  "deliveryDate": "2026-09-01",
+  "currency": "EUR",
+  "buyerReference": "SERVICE-ACHATS-EU-04",
+  "purchaseOrderReference": "BC-2026-4412",
+  "contractReference": "MARCHE-2026-INFRA-07",
+  "seller": {
+    "name": "Nimbus Ingénierie SAS",
+    "tradingName": "Nimbus",
+    "legalInfo": "SAS au capital de 150 000 € — RCS Nanterre 901 234 567",
+    "siret": "90123456700026",
+    "vatNumber": "FR40901234567",
+    "address": {
+      "line1": "18 avenue de la République",
+      "line2": "Bâtiment C",
+      "city": "Nanterre",
+      "postalCode": "92000",
+      "countryCode": "FR"
+    },
+    "contact": {
+      "name": "Service facturation",
+      "email": "facturation@nimbus-ingenierie.fr",
+      "phone": "+33145000000"
+    }
+  },
+  "buyer": {
+    "name": "Groupe Aramis SA",
+    "siret": "38298765400045",
+    "vatNumber": "FR12382987654",
+    "address": {
+      "line1": "5 rue de la Paix",
+      "city": "Paris",
+      "postalCode": "75002",
+      "countryCode": "FR"
+    },
+    "contact": {
+      "name": "Direction des achats",
+      "email": "achats@groupe-aramis.fr"
+    }
+  },
+  "lines": [
+    {
+      "id": "1",
+      "description": "Prestation d'audit d'infrastructure",
+      "details": "40 jours-homme, forfait",
+      "quantity": 40,
+      "unit": "DAY",
+      "unitPrice": 950.0,
+      "discount": 2000.0,
+      "tax": { "category": "S", "rate": 20 },
+      "sellerAssignedId": "AUDIT-INFRA"
+    },
+    {
+      "id": "2",
+      "description": "Licence logicielle annuelle — module supervision",
+      "quantity": 5,
+      "unit": "C62",
+      "unitPrice": 320.0,
+      "tax": { "category": "S", "rate": 10 }
+    },
+    {
+      "id": "3",
+      "description": "Formation utilisateurs (export hors UE)",
+      "quantity": 1,
+      "unit": "C62",
+      "unitPrice": 1800.0,
+      "tax": {
+        "category": "G",
+        "rate": 0,
+        "exemptionReason": "Exonération de TVA, exportation hors UE — art. 262 I du CGI",
+        "exemptionCode": "VATEX-EU-G"
+      }
+    }
+  ],
+  "documentCharges": [
+    {
+      "type": "allowance",
+      "amount": 500.0,
+      "reason": "Remise commerciale globale — client fidélité",
+      "tax": { "category": "S", "rate": 20 }
+    },
+    {
+      "type": "charge",
+      "amount": 150.0,
+      "reason": "Frais de déplacement",
+      "tax": { "category": "S", "rate": 20 }
+    }
+  ],
+  "payment": {
+    "means": "58",
+    "iban": "FR7630006000011234567890189",
+    "bic": "AGRIFRPPXXX",
+    "accountHolder": "Nimbus Ingénierie SAS",
+    "latePenaltyRate": 12.15,
+    "recoveryIndemnity": 40,
+    "discountTerms": "Escompte de 1 % pour tout règlement sous 10 jours ; au-delà, néant.",
+    "note": "Facture payable par virement uniquement."
+  },
+  "prepaidAmount": 5000.0,
+  "notes": [
+    "Merci de mentionner le numéro de facture sur votre virement.",
+    "TVA acquittée d'après les débits."
+  ]
+}

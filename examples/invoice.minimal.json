@@ -1,0 +1,50 @@
+{
+  "invoiceNumber": "F-2026-0007",
+  "type": "380",
+  "issueDate": "2026-09-04",
+  "dueDate": "2026-10-04",
+  "deliveryDate": "2026-09-02",
+  "currency": "EUR",
+  "buyerReference": "ACHATS-DIR",
+  "seller": {
+    "name": "Studio Lumen SAS",
+    "legalInfo": "SAS au capital de 20 000 €",
+    "siret": "90123456700018",
+    "vatNumber": "FR32901234567",
+    "address": {
+      "line1": "12 rue des Artisans",
+      "city": "Lyon",
+      "postalCode": "69003",
+      "countryCode": "FR"
+    },
+    "contact": { "name": "Facturation", "email": "facturation@studiolumen.fr" }
+  },
+  "buyer": {
+    "name": "Boulangerie Payot EURL",
+    "siret": "84098765400021",
+    "vatNumber": "FR76840987654",
+    "address": {
+      "line1": "3 place du Marché",
+      "city": "Villeurbanne",
+      "postalCode": "69100",
+      "countryCode": "FR"
+    }
+  },
+  "lines": [
+    {
+      "description": "Création d'identité visuelle",
+      "details": "Logo, charte graphique, déclinaisons",
+      "quantity": 1,
+      "unit": "C62",
+      "unitPrice": 2400.0,
+      "tax": { "category": "S", "rate": 20 }
+    }
+  ],
+  "payment": {
+    "means": "58",
+    "iban": "FR7630006000011234567890189",
+    "bic": "AGRIFRPPXXX",
+    "latePenaltyRate": 12.15,
+    "recoveryIndemnity": 40
+  }
+}
