@@ -18,9 +18,9 @@ JSON  ──▶  domaine EN 16931 (TVA, totaux, mentions FR)
 ```
 
 L’UBL est le format au profil français **CIUS-FR** (XP Z12-012) : cadre de
-facturation, notes légales, identifiants SIREN/SIRET et Schematron BR-FR.
-Factur-X et le CII restent validés EN 16931 générique (pas encore
-Extended-CTC-FR).
+facturation, notes légales, identifiants SIREN/SIRET, XSD OASIS 2.1 (pack
+FNFE) et Schematron BR-FR. Factur-X et le CII restent validés EN 16931
+générique (pas encore Extended-CTC-FR).
 
 ## Démarrage rapide
 
@@ -47,21 +47,27 @@ curl -X POST 'http://localhost:3000/api/v1/einvoices?format=ubl&validate=true' \
 ```
 
 Autres commandes : `npm run typecheck`, `npm test`, `npm run build`,
-`npm run vendor:ubl` (régénère les Schematron compilés).
+`npm run vendor:ubl` (régénère le XSD UBL 2.1 et les Schematron compilés).
 
 ## Validation
 
 `validate=true` (CLI `--validate`, requête `?validate=true`) lance une
-validation **Schematron** du livrable (100 % JavaScript/WebAssembly, aucune
-JVM) :
+validation du livrable (100 % JavaScript/WebAssembly, aucune JVM) :
 
-| Format | Moteur | Artefacts |
+| Format | Moteur | Artefacts (ordre FNFE) |
 |---|---|---|
 | `cii` / `facturx` | [`@stafyniaksacha/facturx`](https://github.com/stafyniaksacha/facturx) | XSD + Schematron EN 16931 |
-| `ubl` | SaxonJS + XSLT compilé (SEF) | CEN EN 16931 v1.3.17 (`vendor/en16931-ubl/`) **puis** BR-FR Flux 2 FNFE-MPE v1.4.0.04 (`vendor/france-rfe/`) |
+| `ubl` | [`libxml2-wasm`](https://www.npmjs.com/package/libxml2-wasm) puis SaxonJS | **1.** XSD OASIS UBL 2.1 (`vendor/france-rfe/ubl-xsd/`, pack [FNFE-MPE France_RFE](https://github.com/fnfempe/France_RFE/tree/v1.4.0.04/FNFE_RFE_INVOICE/UBL/1xsd_UBL2.1)) **2.** Schematron CEN EN 16931 v1.3.17 (`vendor/en16931-ubl/`) **3.** Schematron BR-FR Flux 2 v1.4.0.04 (`vendor/france-rfe/`) |
 
-Le profil reporté pour l’UBL est `ubl:cius-fr`. Un document non conforme
-fait échouer la CLI (code 2) et l’API HTTP (422).
+CIUS-FR n’a pas de XSD propre : XP Z12-012 pose les règles Schematron sur le
+schéma de la syntaxe (OASIS UBL 2.1). Les Schematron ne s’exécutent que si
+le XSD passe.
+
+Le profil reporté pour l’UBL est `ubl:cius-fr`. Un livrable non conforme :
+- CLI : code de sortie 2 (le fichier est tout de même écrit) ;
+- `POST /api/v1/einvoices` : le fichier est renvoyé, en-tête `X-EInvoice-Valid` ;
+- `POST /api/v1/einvoices/validate` : HTTP 422 ;
+- JSON d’entrée ou mentions FR invalides : HTTP 422 (`InvoiceValidationError`).
 
 ## Conformité française (CIUS-FR)
 
@@ -84,7 +90,8 @@ Couvert **dans le document** (domaine + sérialiseur UBL + Schematron BR-FR) :
 - `CustomizationID` = `urn:cen.eu:en16931:2017` (identifiant officiel CIUS-FR)
 
 Contrôles métier : `Invoice.assertFrenchComplianceOrThrow()` avant toute
-génération. Contrôles syntaxiques UBL : Schematron CEN puis BR-FR.
+génération. Contrôles syntaxiques UBL : XSD OASIS 2.1, puis Schematron CEN,
+puis BR-FR.
 
 **Hors périmètre** (exigé par la réforme, mais ce n’est pas le rôle de
 l’émetteur du fichier) : transmission via une Plateforme Agréée, signature
@@ -125,9 +132,10 @@ src/
                        point de calcul unique), ports
     application/       schéma JSON (zod), mapper → domaine,
                        GenerateEInvoiceUseCase / ValidateEInvoiceUseCase
-    infrastructure/    UBL maison + Schematron CEN/BR-FR (SaxonJS),
-                       node-zugferd (CII), pdfkit (PDF),
-                       @stafyniaksacha/facturx (assemblage + validation CII)
+    infrastructure/    UBL maison + XSD UBL 2.1 (libxml2-wasm) +
+                       Schematron CEN/BR-FR (SaxonJS), node-zugferd (CII),
+                       pdfkit (PDF), @stafyniaksacha/facturx (assemblage
+                       + validation CII)
     config/container.ts composition root
     index.ts            API publique du module
   interfaces/http/     Express (dépend de einvoicing/, jamais l’inverse)
@@ -136,6 +144,7 @@ src/
 vendor/
   en16931-ubl/         Schematron CEN EN 16931 UBL v1.3.17
   france-rfe/          Schematron BR-FR Flux 2 v1.4.0.04
+                       + ubl-xsd/ (OASIS UBL 2.1 Invoice/CreditNote)
 ```
 
 Règle de dépendance : `domain` n’importe rien · `application → domain` ·
@@ -175,7 +184,8 @@ Points clés :
    `controllers/einvoicing.controller.ts`) ainsi que `vendor/en16931-ubl/`
    et `vendor/france-rfe/` pour la validation UBL.
 2. Ajouter les dépendances : `node-zugferd`, `pdf-lib`, `pdfkit`, `zod`,
-   `@stafyniaksacha/facturx`, `saxon-js` (versions dans `package.json`).
+   `@stafyniaksacha/facturx`, `saxon-js`, `libxml2-wasm` (versions dans
+   `package.json`).
 3. Soit monter le routeur prêt à l’emploi :
 
    ```ts
@@ -201,9 +211,10 @@ est passée explicitement) : fonction pure `JSON → facture`.
 ## Limites connues du POC
 
 - **UBL** : sérialiseur maison (`infrastructure/serializers/ubl.serializer.ts`),
-  profil CIUS-FR. Le XSD OASIS UBL 2.1 n’est pas embarqué ; les règles
-  UBL-CR-* du Schematron CEN couvrent la cardinalité. Régénérer les
-  artefacts : `npm run vendor:ubl`.
+  profil CIUS-FR. Chaîne officielle FNFE : XSD OASIS UBL 2.1 (pack
+  `France_RFE/…/1xsd_UBL2.1`, moteur `libxml2-wasm`) puis Schematron CEN
+  (règles `UBL-CR-*` du profil EN 16931) puis BR-FR. Régénérer :
+  `npm run vendor:ubl`. Pas de JVM.
 - **Factur-X / CII** : validés EN 16931 générique uniquement. `node-zugferd`
   n’émet pas le `ProfileID` / cadre BT-23 ; le profil Extended-CTC-FR n’est
   pas appliqué.
@@ -232,5 +243,6 @@ npm test
   domaine (cadre `S1`, notes PMD/PMT/AAB/BAR, endpoint `0225`), cas d’usage
   `GenerateEInvoiceUseCase` avec adaptateurs factices.
 - **Intégration** (`tests/integration/`) : génère les 3 formats à partir des
-  exemples. Factur-X/CII : XSD + Schematron EN 16931. UBL : Schematron CEN
-  **et** BR-FR (profil `ubl:cius-fr`). Aucune lib n’est mockée.
+  exemples. Factur-X/CII : XSD + Schematron EN 16931. UBL : XSD OASIS 2.1
+  **puis** Schematron CEN **et** BR-FR (profil `ubl:cius-fr`). Aucune lib
+  n’est mockée.

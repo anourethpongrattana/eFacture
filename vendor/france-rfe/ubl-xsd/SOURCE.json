@@ -1,0 +1,8 @@
+{
+  "name": "OASIS UBL 2.1 XSD (Invoice / CreditNote), redistribué par FNFE-MPE",
+  "version": "2.1",
+  "pack": "France_RFE v1.4.0.04",
+  "source": "https://github.com/fnfempe/France_RFE/tree/v1.4.0.04/FNFE_RFE_INVOICE/UBL/1xsd_UBL2.1",
+  "oasis": "http://docs.oasis-open.org/ubl/os-UBL-2.1/UBL-2.1.zip",
+  "note": "CIUS-FR n'a pas de XSD propre : on valide le schéma OASIS UBL 2.1 puis les Schematron. Régénérer via : npm run vendor:ubl"
+}

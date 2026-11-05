@@ -20,6 +20,7 @@
   "dependencies": {
     "@stafyniaksacha/facturx": "0.6.1",
     "express": "^5.1.0",
+    "libxml2-wasm": "^0.7.2",
     "node-zugferd": "0.1.0",
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.15.1",

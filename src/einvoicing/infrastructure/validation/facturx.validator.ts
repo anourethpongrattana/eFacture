@@ -12,7 +12,7 @@ import { validateUblXml } from "./ubl.validator.js";
 /**
  * Validation des livrables e-invoice.
  * - CII / Factur-X : `@stafyniaksacha/facturx` (XSD + Schematron).
- * - UBL : Schematron CEN/TC 434 via SaxonJS (`ubl.validator.ts`).
+ * - UBL : XSD OASIS 2.1 (pack FNFE) puis Schematron CEN + BR-FR (`ubl.validator.ts`).
  */
 export class FacturxValidator implements EInvoiceValidator {
   async validateCiiXml(xml: string): Promise<ValidationReport> {

@@ -1,8 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
+import {
+  XmlDocument,
+  XmlValidateError,
+  XsdValidator,
+} from "libxml2-wasm";
+import { xmlRegisterFsInputProviders } from "libxml2-wasm/lib/nodejs.mjs";
 import SaxonJS from "saxon-js";
 
 import type {
@@ -16,11 +22,17 @@ const UBL_CREDITNOTE_NS =
   "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2";
 
 const stylesheetCache = new Map<string, unknown>();
+const xsdCache = new Map<
+  "Invoice" | "CreditNote",
+  { schema: XmlDocument; validator: XsdValidator }
+>();
+let fsProvidersReady = false;
 
 /**
- * Validation UBL CIUS-FR :
- * 1. Schematron EN 16931 CEN/TC 434 v1.3.17
- * 2. Schematron BR-FR Flux 2 FNFE-MPE v1.4.0.04 (XP Z12-012)
+ * Validation UBL CIUS-FR, dans l'ordre FNFE (XP Z12-012) :
+ * 1. XSD OASIS UBL 2.1 (pack France_RFE `1xsd_UBL2.1`)
+ * 2. Schematron EN 16931 CEN/TC 434 v1.3.17
+ * 3. Schematron BR-FR Flux 2 FNFE-MPE v1.4.0.04
  */
 export async function validateUblXml(xml: string): Promise<ValidationReport> {
   const wellFormed = inspectUblDocument(xml);
@@ -35,6 +47,18 @@ export async function validateUblXml(xml: string): Promise<ValidationReport> {
   }
 
   try {
+    const xsdIssues = validateAgainstXsd(xml, wellFormed.kind);
+    const xsdBlocking = xsdIssues.filter((e) => e.severity !== "warning");
+    if (xsdBlocking.length > 0) {
+      return {
+        valid: false,
+        profile: "ubl:cius-fr",
+        xsdValid: false,
+        schematronValid: false,
+        errors: xsdIssues,
+      };
+    }
+
     const enIssues = await runSchematron(
       xml,
       "en16931-ubl",
@@ -45,7 +69,7 @@ export async function validateUblXml(xml: string): Promise<ValidationReport> {
       "france-rfe",
       "BR-FR-Flux2-Schematron-UBL.sef.json.gz",
     );
-    const issues = [...enIssues, ...frIssues];
+    const issues = [...xsdIssues, ...enIssues, ...frIssues];
     const blocking = issues.filter((e) => e.severity !== "warning");
     return {
       valid: blocking.length === 0,
@@ -58,33 +82,100 @@ export async function validateUblXml(xml: string): Promise<ValidationReport> {
     return {
       valid: false,
       profile: "ubl:cius-fr",
-      xsdValid: wellFormed.ok,
+      xsdValid: false,
       schematronValid: false,
       errors: [
         {
           severity: "fatal",
-          message: `Schematron UBL: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Validation UBL: ${err instanceof Error ? err.message : String(err)}`,
         },
       ],
     };
   }
 }
 
-function inspectUblDocument(xml: string): { ok: true } | { ok: false; message: string } {
+function inspectUblDocument(
+  xml: string,
+): { ok: true; kind: "Invoice" | "CreditNote" } | { ok: false; message: string } {
   const trimmed = xml.trim();
   if (!trimmed.startsWith("<")) {
     return { ok: false, message: "Le livrable UBL n'est pas un document XML." };
   }
   const isInvoice = trimmed.includes(UBL_INVOICE_NS);
   const isCreditNote = trimmed.includes(UBL_CREDITNOTE_NS);
-  if (!isInvoice && !isCreditNote) {
-    return {
-      ok: false,
-      message:
-        "Racine UBL attendue (Invoice ou CreditNote, namespaces OASIS UBL 2.1).",
-    };
+  if (isInvoice) return { ok: true, kind: "Invoice" };
+  if (isCreditNote) return { ok: true, kind: "CreditNote" };
+  return {
+    ok: false,
+    message:
+      "Racine UBL attendue (Invoice ou CreditNote, namespaces OASIS UBL 2.1).",
+  };
+}
+
+function validateAgainstXsd(
+  xml: string,
+  kind: "Invoice" | "CreditNote",
+): ValidationIssueReport[] {
+  const validator = loadXsdValidator(kind);
+  const doc = XmlDocument.fromString(xml);
+  try {
+    validator.validate(doc);
+    return [];
+  } catch (err) {
+    if (err instanceof XmlValidateError) {
+      return err.details.map(xsdDetailToIssue);
+    }
+    throw err;
+  } finally {
+    doc.dispose();
   }
-  return { ok: true };
+}
+
+function loadXsdValidator(kind: "Invoice" | "CreditNote"): XsdValidator {
+  const cached = xsdCache.get(kind);
+  if (cached) return cached.validator;
+
+  if (!fsProvidersReady) {
+    xmlRegisterFsInputProviders();
+    fsProvidersReady = true;
+  }
+
+  const xsdPath = join(
+    resolveArtefactsDir("france-rfe"),
+    "ubl-xsd",
+    "maindoc",
+    `UBL-${kind}-2.1.xsd`,
+  );
+  if (!existsSync(xsdPath)) {
+    throw new Error(
+      `XSD UBL ${kind} introuvable: ${xsdPath}. Lancer \`npm run vendor:ubl\`.`,
+    );
+  }
+
+  const schema = XmlDocument.fromBuffer(readFileSync(xsdPath), {
+    url: pathToFileURL(xsdPath).href,
+  });
+  const validator = XsdValidator.fromDoc(schema);
+  xsdCache.set(kind, { schema, validator });
+  return validator;
+}
+
+function xsdDetailToIssue(detail: {
+  message: string;
+  line: number;
+  col: number;
+  xpath?: string;
+  level: number;
+}): ValidationIssueReport {
+  const loc = detail.xpath
+    ? detail.xpath
+    : `ligne ${detail.line}, col ${detail.col}`;
+  return {
+    message: detail.message.trim(),
+    rule: "XSD-UBL-2.1",
+    location: loc,
+    severity: detail.level >= 3 ? "fatal" : detail.level === 1 ? "warning" : "error",
+  };
 }
 
 async function runSchematron(

@@ -59,7 +59,7 @@ describe("génération e2e (exemples réels, libs réelles)", () => {
     },
   );
 
-  it("rejette un XML UBL incomplet via le Schematron EN 16931", async () => {
+  it("rejette un XML UBL incomplet via le XSD OASIS 2.1", async () => {
     const einvoicing = createEInvoicingModule();
     const stub = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -71,8 +71,9 @@ describe("génération e2e (exemples réels, libs réelles)", () => {
       content: new TextEncoder().encode(stub),
     });
     expect(report.valid).toBe(false);
-    expect(report.schematronValid).toBe(false);
+    expect(report.xsdValid).toBe(false);
     expect(report.errors.length).toBeGreaterThan(0);
+    expect(report.errors.some((e) => e.rule === "XSD-UBL-2.1")).toBe(true);
   });
 
   it.each(["invoice.minimal.json", "invoice.full.json"])(
@@ -97,6 +98,7 @@ describe("génération e2e (exemples réels, libs réelles)", () => {
       expect(xml).toContain("#BAR#B2B");
       expect(xml).toContain('schemeID="0225"');
       expect(result.validation!.profile).toBe("ubl:cius-fr");
+      expect(result.validation!.xsdValid).toBe(true);
 
       expect(result.validation).toBeDefined();
       if (!result.validation!.valid) {
