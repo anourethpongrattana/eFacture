@@ -76,7 +76,7 @@ describe("génération e2e (exemples réels, libs réelles)", () => {
   });
 
   it.each(["invoice.minimal.json", "invoice.full.json"])(
-    "produit un XML UBL EN16931 valide pour %s",
+    "produit un XML UBL CIUS-FR (EN16931 + BR-FR) valide pour %s",
     async (file) => {
       const einvoicing = createEInvoicingModule();
       const input = await loadExample(file);
@@ -90,6 +90,13 @@ describe("génération e2e (exemples réels, libs réelles)", () => {
       const xml = Buffer.from(result.content).toString("utf-8");
       expect(xml).toContain("<Invoice");
       expect(xml).toContain("urn:oasis:names:specification:ubl:schema:xsd:Invoice-2");
+      expect(xml).toContain("<cbc:ProfileID>S1</cbc:ProfileID>");
+      expect(xml).toContain("#PMD#");
+      expect(xml).toContain("#PMT#");
+      expect(xml).toContain("#AAB#");
+      expect(xml).toContain("#BAR#B2B");
+      expect(xml).toContain('schemeID="0225"');
+      expect(result.validation!.profile).toBe("ubl:cius-fr");
 
       expect(result.validation).toBeDefined();
       if (!result.validation!.valid) {

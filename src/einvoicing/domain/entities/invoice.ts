@@ -3,6 +3,15 @@ import { Money } from "../value-objects/money.js";
 import { Party } from "../value-objects/party.js";
 import { PaymentTerms } from "../value-objects/payment-terms.js";
 import { TaxCategory } from "../value-objects/tax-category.js";
+import {
+  DEFAULT_BAR_TREATMENT,
+  DEFAULT_BILLING_FRAMEWORK,
+  EAS_SIREN,
+  FR_INVOICE_NUMBER_RE,
+  type BarTreatment,
+  type BillingFramework,
+  type CodedNote,
+} from "../value-objects/french-e-invoicing.js";
 import { InvoiceLine } from "./invoice-line.js";
 
 /** Type de document (BT-3), codes UNTDID 1001. */
@@ -51,6 +60,10 @@ export interface InvoiceProps {
   documentCharges?: DocumentCharge[];
   /** Notes libres (BG-1). */
   notes?: string[];
+  /** Cadre de facturation (BT-23), ex. S1 = facture de services. */
+  billingFramework?: BillingFramework;
+  /** Traitement BAR (e-invoicing B2B, e-reporting B2C…). */
+  barTreatment?: BarTreatment;
 }
 
 /** Agrégat Facture (racine). Porte les invariants métier + les mentions FR. */
@@ -73,6 +86,8 @@ export class Invoice {
   readonly prepaidAmount: Money;
   readonly documentCharges: DocumentCharge[];
   readonly notes: string[];
+  readonly billingFramework: BillingFramework;
+  readonly barTreatment: BarTreatment;
 
   constructor(props: InvoiceProps) {
     if (!props.number?.trim())
@@ -113,6 +128,8 @@ export class Invoice {
     this.prepaidAmount = props.prepaidAmount ?? Money.zero(props.currency);
     this.documentCharges = props.documentCharges ?? [];
     this.notes = props.notes?.filter((n) => n.trim()) ?? [];
+    this.billingFramework = props.billingFramework ?? DEFAULT_BILLING_FRAMEWORK;
+    this.barTreatment = props.barTreatment ?? DEFAULT_BAR_TREATMENT;
   }
 
   get isCreditNote(): boolean {
@@ -168,8 +185,64 @@ export class Invoice {
         code: "BR-FR-CREDIT-REF",
         message: "Un avoir doit référencer la facture d'origine",
       });
+    if (!FR_INVOICE_NUMBER_RE.test(this.number))
+      issues.push({
+        path: "invoiceNumber",
+        code: "BR-FR-01",
+        message:
+          "Le numéro de facture (BT-1) doit faire au plus 35 caractères (A-Z, a-z, 0-9, - + _ /)",
+      });
+    if (!this.seller.electronicAddress)
+      issues.push({
+        path: "seller.electronicAddress",
+        code: "BR-FR-13",
+        message: "L'adresse électronique du vendeur (BT-34) est obligatoire",
+      });
+    if (!this.buyer.electronicAddress)
+      issues.push({
+        path: "buyer.electronicAddress",
+        code: "BR-FR-12",
+        message: "L'adresse électronique de l'acheteur (BT-49) est obligatoire",
+      });
+    if (this.barTreatment === "B2B" && !this.isCreditNote) {
+      const buyerSiren = this.buyer.siren;
+      const buyerEp = this.buyer.electronicAddress;
+      if (buyerSiren && buyerEp && this.type !== "389") {
+        if (buyerEp.scheme !== EAS_SIREN || !buyerEp.value.startsWith(buyerSiren))
+          issues.push({
+            path: "buyer.electronicAddress",
+            code: "BR-FR-21",
+            message:
+              "En B2B, l'adresse électronique de l'acheteur (BT-49) doit être le SIREN avec schemeID 0225",
+          });
+      }
+    }
+    const due = this.paymentTerms.dueDate;
+    const prepaidFramework = /^(B2|S2|M2)$/.test(this.billingFramework);
+    if (due && due.getTime() < this.issueDate.getTime() && !prepaidFramework)
+      issues.push({
+        path: "dueDate",
+        code: "BR-FR-CO-07",
+        message: "La date d'échéance (BT-9) ne peut pas être antérieure à la date de facture",
+      });
 
     if (issues.length > 0) throw new InvoiceValidationError(issues);
+  }
+
+  /**
+   * Notes BG-1 avec codes sujets CIUS-FR (PMD, PMT, AAB, BAR, puis notes libres).
+   */
+  codedNotes(): CodedNote[] {
+    const notes: CodedNote[] = [
+      { subjectCode: "PMD", content: this.paymentTerms.latePenaltyNote() },
+      { subjectCode: "PMT", content: this.paymentTerms.recoveryIndemnityNote() },
+      { subjectCode: "AAB", content: this.paymentTerms.discountNote() },
+      { subjectCode: "BAR", content: this.barTreatment },
+    ];
+    for (const n of this.notes) {
+      notes.push({ subjectCode: "AAI", content: n });
+    }
+    return notes;
   }
 
   hasTaxableLines(): boolean {

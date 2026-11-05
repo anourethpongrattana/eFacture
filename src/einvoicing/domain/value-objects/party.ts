@@ -72,7 +72,11 @@ export class Party {
     this.contact = props.contact;
     this.electronicAddress =
       props.electronicAddress ??
-      (props.siret ? { value: props.siret, scheme: "0009" } : undefined);
+      (this.siren
+        ? { value: this.siren, scheme: "0225" }
+        : props.siret
+          ? { value: props.siret, scheme: "0009" }
+          : undefined);
     this.legalInfo = props.legalInfo?.trim() || undefined;
   }
 }

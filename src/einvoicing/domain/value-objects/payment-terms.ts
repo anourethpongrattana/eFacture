@@ -85,6 +85,25 @@ export class PaymentTerms {
     return PAYMENT_MEANS_LABELS[this.meansCode];
   }
 
+  /** Mention pénalités de retard (note PMD, BR-FR-05). */
+  latePenaltyNote(): string {
+    return `En cas de retard de paiement : pénalités au taux de ${formatRate(
+      this.latePenaltyRate,
+    )} % par an (art. L441-10 du Code de commerce).`;
+  }
+
+  /** Mention indemnité forfaitaire de recouvrement (note PMT, BR-FR-05). */
+  recoveryIndemnityNote(): string {
+    return `Indemnité forfaitaire pour frais de recouvrement de ${this.recoveryIndemnity.toFixed(
+      2,
+    )} € (art. D441-5 du Code de commerce).`;
+  }
+
+  /** Mention escompte ou néant (note AAB, BR-FR-05). */
+  discountNote(): string {
+    return this.discountTerms;
+  }
+
   /**
    * Bloc de texte des conditions de règlement, destiné à BT-20 et au PDF.
    * Regroupe les mentions légales obligatoires côté vendeur français.

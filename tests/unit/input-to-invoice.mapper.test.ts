@@ -23,6 +23,18 @@ describe("mapInputToInvoice", () => {
     expect(invoice.number).toBe("F-2026-0007");
     expect(invoice.seller.siret).toBe("90123456700018");
     expect(invoice.seller.siren).toBe("901234567");
+    expect(invoice.billingFramework).toBe("S1");
+    expect(invoice.barTreatment).toBe("B2B");
+    expect(invoice.seller.electronicAddress).toEqual({
+      scheme: "0225",
+      value: "901234567",
+    });
+    expect(invoice.codedNotes().map((n) => n.subjectCode)).toEqual([
+      "PMD",
+      "PMT",
+      "AAB",
+      "BAR",
+    ]);
     expect(invoice.lines).toHaveLength(1);
     expect(() => invoice.assertFrenchComplianceOrThrow()).not.toThrow();
 

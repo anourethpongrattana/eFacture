@@ -39,11 +39,11 @@ Autres commandes : `npm run typecheck`, `npm test`, `npm run build`.
 | `ubl` | XML UBL 2.1 (OASIS) seul | — |
 
 Le paramètre `validate=true` (CLI `--validate`, requête `?validate=true`)
-déclenche une validation **Schematron EN 16931** du livrable produit
+déclenche une validation **Schematron** du livrable produit
 (100 % JavaScript/WebAssembly, aucune JVM requise) :
 
 - `cii` / `facturx` : XSD + Schematron via [`@stafyniaksacha/facturx`](https://github.com/stafyniaksacha/facturx)
-- `ubl` : Schematron officiel CEN/TC 434 v1.3.17 (artefact dans `vendor/en16931-ubl/`)
+- `ubl` : Schematron CEN EN 16931 v1.3.17 **et** règles françaises BR-FR Flux 2 (FNFE-MPE v1.4.0.04, profil CIUS-FR)
 
 ## Architecture (clean architecture)
 
@@ -97,8 +97,11 @@ Identité + SIRET/SIREN + n° TVA vendeur · SIREN acheteur (FR↔FR) · n° et 
 de facture · date de livraison/exécution · lignes (désignation, quantité, PU
 HT, taux) · totaux HT par taux, TVA, TTC · conditions et date de règlement ·
 pénalités de retard + indemnité de recouvrement · conditions d'escompte ·
-motif d'exonération de TVA le cas échéant. Contrôlées par
-`Invoice.assertFrenchComplianceOrThrow()` avant toute génération (HTTP 422 /
+motif d'exonération de TVA le cas échéant · cadre de facturation (BT-23,
+défaut `S1`) · notes CIUS-FR `#PMD#` / `#PMT#` / `#AAB#` / `#BAR#B2B` ·
+adresses électroniques SIREN (`schemeID="0225"`) · SIRET établissement
+(`schemeID="0009"`). Contrôlées par `Invoice.assertFrenchComplianceOrThrow()`
+et, pour l'UBL, par le Schematron BR-FR avant toute génération (HTTP 422 /
 `InvoiceValidationError` si non conforme).
 
 Hors périmètre POC : transmission via PDP/PPF, signature électronique,
@@ -122,17 +125,13 @@ du routage, des statuts de cycle de vie et de l'e-reporting est portée par la
 PA, pas par le logiciel émetteur. Deux nuances à connaître avant de brancher
 une PA en aval :
 
-- **Les 3 formats sont validés EN 16931 générique, pas encore au profil
-  français.** Le socle DGFiP ajoute une extension nationale au-dessus d'EN
-  16931 — **CIUS-FR** pour UBL, **Extended-CTC-FR** pour Factur-X/CII —
-  portant les règles métier et statuts propres au contrôle continu français
-  (publiée dans les spécifications externes, cf. AFNOR XP Z12-012). Nos
-  validateurs vérifient l'EN 16931 générique, pas ce profil FR. Un document
-  « valide EN 16931 » n'est donc pas automatiquement « accepté tel quel par
-  une PA française » — à vérifier avec la PA ciblée.
-- **Toute PA doit savoir recevoir les 3 formats.** Factur-X/CII restent le
-  chemin le plus éprouvé (héritage Chorus Pro). L'UBL est désormais validé
-  par le Schematron CEN, mais pas encore par les règles CIUS-FR.
+- **UBL est au profil CIUS-FR** (EN 16931 + règles BR-FR FNFE, XP Z12-012) :
+  cadre de facturation (BT-23, défaut `S1`), notes légales `#PMD#` / `#PMT#` /
+  `#AAB#`, traitement `#BAR#B2B`, adresses électroniques SIREN `schemeID="0225"`.
+  Factur-X/CII restent validés EN 16931 générique (pas encore Extended-CTC-FR).
+- **Toute PA doit savoir recevoir les 3 formats.** Un document CIUS-FR valide
+  n'est pas pour autant « transmis » : le routage, les statuts de cycle de vie
+  et l'e-reporting restent à la charge de la Plateforme Agréée.
 
 Sources : [economie.gouv.fr — ouverture de l'annuaire](https://www.economie.gouv.fr/actualites/facturation-electronique-ouverture-de-lannuaire-dedie),
 [Pennylane — liste des PA](https://www.pennylane.com/fr/fiches-pratiques/facture-electronique/liste-des-pdp),
@@ -166,11 +165,12 @@ tel quel dans une app qui a déjà sa propre auth, logging, etc.
 ## Limites connues du POC
 
 - **UBL** : sérialiseur maison (`infrastructure/serializers/ubl.serializer.ts`),
-  validé par le Schematron officiel CEN/TC 434 EN 16931 UBL v1.3.17
-  (`vendor/en16931-ubl/`, exécuté via SaxonJS). Le XSD OASIS UBL 2.1 n'est
-  pas embarqué (schéma CAC trop volumineux) ; les règles UBL-CR-* du
-  Schematron couvrent la cardinalité EN 16931. Régénérer l'artefact compilé :
-  `npm run vendor:ubl`. Le profil français CIUS-FR n'est pas encore appliqué.
+  profil **CIUS-FR** (CustomizationID `urn:cen.eu:en16931:2017`). Validé par
+  le Schematron CEN EN 16931 v1.3.17 **et** le Schematron BR-FR Flux 2
+  FNFE-MPE v1.4.0.04 (`vendor/france-rfe/`). Le XSD OASIS UBL 2.1 n'est pas
+  embarqué ; les règles UBL-CR-* couvrent la cardinalité. Régénérer :
+  `npm run vendor:ubl`. Hors périmètre : profil EXTENDED-CTC-FR, connexion
+  PA, signature, archivage, consultation de l'annuaire PPF.
 - **`node-zugferd@0.1.0`** (beta) a deux limites contournées explicitement
   dans le code (voir commentaires + `sanitize-cii-xml.ts`) :
   - la remise de ligne (BG-27, `SpecifiedTradeAllowanceCharge`) n'est pas

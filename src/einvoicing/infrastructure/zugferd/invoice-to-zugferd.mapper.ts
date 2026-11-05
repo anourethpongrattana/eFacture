@@ -16,14 +16,16 @@ export function mapInvoiceToZugferd(ctx: RenderContext): ZugferdInvoiceData {
   const { invoice, totals } = ctx;
   const currency = invoice.currency;
 
-  const notes = [...invoice.notes];
+  const notes = invoice.codedNotes();
   if (invoice.precedingInvoiceReference) {
-    notes.push(
-      `Avoir se rapportant à la facture ${invoice.precedingInvoiceReference.number}` +
+    notes.push({
+      subjectCode: "AAI",
+      content:
+        `Avoir se rapportant à la facture ${invoice.precedingInvoiceReference.number}` +
         (invoice.precedingInvoiceReference.issueDate
           ? ` du ${invoice.precedingInvoiceReference.issueDate.toLocaleDateString("fr-FR")}`
           : ""),
-    );
+    });
   }
 
   const data = {
@@ -31,7 +33,12 @@ export function mapInvoiceToZugferd(ctx: RenderContext): ZugferdInvoiceData {
     typeCode: invoice.type,
     issueDate: invoice.issueDate,
     ...(notes.length > 0
-      ? { includedNote: notes.map((content) => ({ content })) }
+      ? {
+          includedNote: notes.map((n) => ({
+            content: n.content,
+            subjectCode: n.subjectCode,
+          })),
+        }
       : {}),
     transaction: {
       line: invoice.lines.map((line) => mapLine(line)),

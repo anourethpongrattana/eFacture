@@ -1,0 +1,9 @@
+{
+  "name": "FNFE-MPE BR-FR Flux 2 UBL (CIUS-FR / XP Z12-012)",
+  "version": "1.4.0.04",
+  "date": "2026-09-04",
+  "license": "see upstream repository",
+  "source": "https://github.com/fnfempe/France_RFE/releases/tag/v1.4.0.04",
+  "xslt": "https://raw.githubusercontent.com/fnfempe/France_RFE/v1.4.0.04/FNFE_RFE_INVOICE/UBL/EN16931/2xslt/BR-FR-Flux2-Schematron-UBL.xslt",
+  "note": "SEF compilé avec xslt3 (SaxonJS 2.7). Régénérer via : npm run vendor:ubl"
+}

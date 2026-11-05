@@ -6,12 +6,16 @@ import type { DocumentCharge, Invoice } from "../../domain/entities/invoice.js";
 import type { InvoiceLine } from "../../domain/entities/invoice-line.js";
 import type { Party } from "../../domain/value-objects/party.js";
 import type { VatBreakdownLine } from "../../domain/value-objects/vat-breakdown.js";
+import {
+  CIUS_FR_CUSTOMIZATION_ID,
+  ICD_SIRET,
+} from "../../domain/value-objects/french-e-invoicing.js";
 
 /**
- * Sérialiseur UBL 2.1 (OASIS) — sous-ensemble EN 16931.
+ * Sérialiseur UBL 2.1 (OASIS) — profil CIUS-FR (EN 16931 + règles BR-FR).
  *
  * node-zugferd n'émet que du CII ; cet adaptateur construit un document UBL
- * `Invoice` couvrant les BT/BG essentiels, dans l'ordre xs:sequence UBL 2.1.
+ * `Invoice` dans l'ordre xs:sequence UBL 2.1.
  */
 export class UblSerializer implements EInvoiceXmlSerializer {
   readonly syntax = "UBL" as const;
@@ -22,15 +26,17 @@ export class UblSerializer implements EInvoiceXmlSerializer {
     const amt = (n: string) => `currencyID="${cur}">${n}`;
 
     const header = [
-      `  <cbc:CustomizationID>urn:cen.eu:en16931:2017</cbc:CustomizationID>`,
-      `  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>`,
+      `  <cbc:CustomizationID>${CIUS_FR_CUSTOMIZATION_ID}</cbc:CustomizationID>`,
+      `  <cbc:ProfileID>${esc(invoice.billingFramework)}</cbc:ProfileID>`,
       `  <cbc:ID>${esc(invoice.number)}</cbc:ID>`,
       `  <cbc:IssueDate>${isoDate(invoice.issueDate)}</cbc:IssueDate>`,
       invoice.paymentTerms.dueDate
         ? `  <cbc:DueDate>${isoDate(invoice.paymentTerms.dueDate)}</cbc:DueDate>`
         : "",
       `  <cbc:InvoiceTypeCode>${invoice.type}</cbc:InvoiceTypeCode>`,
-      ...invoice.notes.map((n) => `  <cbc:Note>${esc(n)}</cbc:Note>`),
+      ...invoice.codedNotes().map(
+        (n) => `  <cbc:Note>#${esc(n.subjectCode)}#${esc(n.content)}</cbc:Note>`,
+      ),
       `  <cbc:DocumentCurrencyCode>${cur}</cbc:DocumentCurrencyCode>`,
       invoice.buyerReference
         ? `  <cbc:BuyerReference>${esc(invoice.buyerReference)}</cbc:BuyerReference>`
@@ -218,6 +224,12 @@ function party(p: Party): string {
         ? `\n      <cbc:EndpointID schemeID="${esc(p.electronicAddress.scheme)}">${esc(
             p.electronicAddress.value,
           )}</cbc:EndpointID>`
+        : ""
+    }${
+      p.siret
+        ? `\n      <cac:PartyIdentification><cbc:ID schemeID="${ICD_SIRET}">${esc(
+            p.siret,
+          )}</cbc:ID></cac:PartyIdentification>`
         : ""
     }
       <cac:PartyName><cbc:Name>${esc(p.tradingName ?? p.name)}</cbc:Name></cac:PartyName>

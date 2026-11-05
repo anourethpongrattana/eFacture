@@ -80,6 +80,8 @@ export function mapInputToInvoice(input: GenerateEInvoiceInput): Invoice {
         : undefined,
     documentCharges,
     notes: input.notes,
+    billingFramework: input.billingFramework,
+    barTreatment: input.barTreatment,
   });
 }
 

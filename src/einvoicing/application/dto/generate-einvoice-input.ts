@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  BAR_TREATMENTS,
+  BILLING_FRAMEWORKS,
+} from "../../domain/value-objects/french-e-invoicing.js";
+
 /**
  * Schéma du JSON d'entrée : un sous-ensemble lisible d'EN 16931.
  * C'est le contrat public d'entrée du module (exporté depuis `index.ts`).
@@ -122,6 +127,14 @@ export const generateEInvoiceInputSchema = z.object({
     .object({ number: z.string().min(1), issueDate: isoDate.optional() })
     .optional(),
   notes: z.array(z.string()).optional(),
+  billingFramework: z
+    .enum(BILLING_FRAMEWORKS)
+    .default("S1")
+    .describe("Cadre de facturation CIUS-FR (BT-23), ex. S1 = facture de services"),
+  barTreatment: z
+    .enum(BAR_TREATMENTS)
+    .default("B2B")
+    .describe("Traitement BAR : B2B = e-invoicing, B2C = e-reporting, etc."),
 });
 
 export type GenerateEInvoiceInput = z.infer<typeof generateEInvoiceInputSchema>;
