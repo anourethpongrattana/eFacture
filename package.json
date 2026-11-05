@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "generate": "tsx src/cli/generate.ts"
+    "generate": "tsx src/cli/generate.ts",
+    "vendor:ubl": "node scripts/fetch-en16931-ubl.js"
   },
   "dependencies": {
     "@stafyniaksacha/facturx": "0.6.1",
@@ -22,6 +23,7 @@
     "node-zugferd": "0.1.0",
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.15.1",
+    "saxon-js": "^2.7.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -30,6 +32,7 @@
     "@types/pdfkit": "^0.13.9",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "xslt3": "^2.7.0"
   }
 }

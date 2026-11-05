@@ -43,6 +43,9 @@ function makeValidator(report: ValidationReport): EInvoiceValidator {
     async validateFacturxPdf() {
       return report;
     },
+    async validateUblXml() {
+      return report;
+    },
   };
 }
 
@@ -71,6 +74,23 @@ describe("GenerateEInvoiceUseCase", () => {
     expect(result.fileName).toMatch(/\.pdf$/);
     expect(result.invoiceNumber).toBe("F-2026-0007");
     expect(result.validation).toBeUndefined();
+  });
+
+  it("génère de l'UBL et déclenche la validation si demandé", async () => {
+    const useCase = new GenerateEInvoiceUseCase({
+      ciiSerializer: fakeXml,
+      ublSerializer: fakeUbl,
+      pdfRenderer: fakePdf,
+      facturxAssembler: fakeAssembler,
+      validator: makeValidator(okReport),
+    });
+
+    const input = await loadExample("invoice.minimal.json");
+    const result = await useCase.execute(input, { format: "ubl", validate: true });
+
+    expect(result.contentType).toBe("application/xml");
+    expect(result.fileName).toMatch(/\.ubl\.xml$/);
+    expect(result.validation?.valid).toBe(true);
   });
 
   it("génère du CII et déclenche la validation si demandé", async () => {

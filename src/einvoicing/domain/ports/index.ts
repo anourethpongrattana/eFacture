@@ -47,7 +47,7 @@ export interface ValidationReport {
   xsdValid: boolean;
   schematronValid?: boolean;
   errors: ValidationIssueReport[];
-  /** Renseigné quand la validation n'a pas pu être exécutée (ex. UBL hors POC). */
+  /** Renseigné quand la validation n'a pas pu être exécutée. */
   skippedReason?: string;
 }
 
@@ -55,4 +55,5 @@ export interface ValidationReport {
 export interface EInvoiceValidator {
   validateCiiXml(xml: string): Promise<ValidationReport>;
   validateFacturxPdf(pdf: Uint8Array): Promise<ValidationReport>;
+  validateUblXml(xml: string): Promise<ValidationReport>;
 }

@@ -88,15 +88,7 @@ export class GenerateEInvoiceUseCase {
           "application/xml",
           utf8.encode(xml),
           invoice.number,
-          shouldValidate
-            ? {
-                valid: true,
-                xsdValid: false,
-                errors: [],
-                skippedReason:
-                  "Validation UBL hors périmètre du POC (schematron EN 16931 UBL non embarqué).",
-              }
-            : undefined,
+          shouldValidate ? await this.deps.validator.validateUblXml(xml) : undefined,
         );
       }
       case "facturx": {

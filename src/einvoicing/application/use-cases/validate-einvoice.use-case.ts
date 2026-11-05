@@ -9,7 +9,7 @@ export interface ValidateEInvoiceInput {
   content: Uint8Array;
 }
 
-/** Valide un livrable e-invoice déjà produit (fichier CII ou PDF Factur-X). */
+/** Valide un livrable e-invoice déjà produit (CII, UBL ou PDF Factur-X). */
 export class ValidateEInvoiceUseCase {
   constructor(private readonly validator: EInvoiceValidator) {}
 
@@ -22,13 +22,9 @@ export class ValidateEInvoiceUseCase {
       case "facturx":
         return this.validator.validateFacturxPdf(input.content);
       case "ubl":
-        return {
-          valid: true,
-          xsdValid: false,
-          errors: [],
-          skippedReason:
-            "Validation UBL hors périmètre du POC (schematron EN 16931 UBL non embarqué).",
-        };
+        return this.validator.validateUblXml(
+          new TextDecoder("utf-8").decode(input.content),
+        );
       default: {
         const _exhaustive: never = input.format;
         throw new Error(`Format non supporté: ${_exhaustive as string}`);

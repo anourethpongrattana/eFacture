@@ -2,15 +2,16 @@ import type {
   EInvoiceXmlSerializer,
   RenderContext,
 } from "../../domain/ports/index.js";
+import type { DocumentCharge, Invoice } from "../../domain/entities/invoice.js";
+import type { InvoiceLine } from "../../domain/entities/invoice-line.js";
 import type { Party } from "../../domain/value-objects/party.js";
 import type { VatBreakdownLine } from "../../domain/value-objects/vat-breakdown.js";
 
 /**
  * Sérialiseur UBL 2.1 (OASIS) — sous-ensemble EN 16931.
  *
- * node-zugferd n'émet que du CII ; cet adaptateur construit à la main un
- * document UBL `Invoice` couvrant les BT/BG essentiels. Périmètre POC :
- * génération uniquement (pas de validation schematron UBL embarquée).
+ * node-zugferd n'émet que du CII ; cet adaptateur construit un document UBL
+ * `Invoice` couvrant les BT/BG essentiels, dans l'ordre xs:sequence UBL 2.1.
  */
 export class UblSerializer implements EInvoiceXmlSerializer {
   readonly syntax = "UBL" as const;
@@ -18,115 +19,195 @@ export class UblSerializer implements EInvoiceXmlSerializer {
   async serialize(ctx: RenderContext): Promise<string> {
     const { invoice, totals } = ctx;
     const cur = invoice.currency;
-    const amount = (n: string, c = cur) =>
-      `currencyID="${c}">${n}`;
+    const amt = (n: string) => `currencyID="${cur}">${n}`;
 
-    const lines = invoice.lines
-      .map((line) => {
-        const net = line.netAmount.toXmlString();
-        return `  <cac:InvoiceLine>
-    <cbc:ID>${esc(line.id)}</cbc:ID>
-    <cbc:InvoicedQuantity unitCode="${esc(line.unitCode)}">${line.quantity}</cbc:InvoicedQuantity>
-    <cbc:LineExtensionAmount ${amount(net)}</cbc:LineExtensionAmount>
-    <cac:Item>
-      <cbc:Name>${esc(line.description)}</cbc:Name>${
-        line.details ? `\n      <cbc:Description>${esc(line.details)}</cbc:Description>` : ""
-      }
-      <cac:ClassifiedTaxCategory>
-        <cbc:ID>${line.taxCategory.code}</cbc:ID>
-        <cbc:Percent>${line.taxCategory.rate}</cbc:Percent>
-        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-      </cac:ClassifiedTaxCategory>
-    </cac:Item>
-    <cac:Price>
-      <cbc:PriceAmount ${amount(line.unitPrice.toXmlString())}</cbc:PriceAmount>
-    </cac:Price>
-  </cac:InvoiceLine>`;
-      })
-      .join("\n");
-
-    const taxSubtotals = totals.vatBreakdown
-      .map(
-        (v: VatBreakdownLine) => `    <cac:TaxSubtotal>
-      <cbc:TaxableAmount ${amount(v.taxableAmount.toXmlString())}</cbc:TaxableAmount>
-      <cbc:TaxAmount ${amount(v.taxAmount.toXmlString())}</cbc:TaxAmount>
-      <cac:TaxCategory>
-        <cbc:ID>${v.categoryCode}</cbc:ID>
-        <cbc:Percent>${v.rate}</cbc:Percent>${
-          v.exemptionReason
-            ? `\n        <cbc:TaxExemptionReason>${esc(v.exemptionReason)}</cbc:TaxExemptionReason>`
-            : ""
-        }
-        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-      </cac:TaxCategory>
-    </cac:TaxSubtotal>`,
-      )
-      .join("\n");
+    const header = [
+      `  <cbc:CustomizationID>urn:cen.eu:en16931:2017</cbc:CustomizationID>`,
+      `  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>`,
+      `  <cbc:ID>${esc(invoice.number)}</cbc:ID>`,
+      `  <cbc:IssueDate>${isoDate(invoice.issueDate)}</cbc:IssueDate>`,
+      invoice.paymentTerms.dueDate
+        ? `  <cbc:DueDate>${isoDate(invoice.paymentTerms.dueDate)}</cbc:DueDate>`
+        : "",
+      `  <cbc:InvoiceTypeCode>${invoice.type}</cbc:InvoiceTypeCode>`,
+      ...invoice.notes.map((n) => `  <cbc:Note>${esc(n)}</cbc:Note>`),
+      `  <cbc:DocumentCurrencyCode>${cur}</cbc:DocumentCurrencyCode>`,
+      invoice.buyerReference
+        ? `  <cbc:BuyerReference>${esc(invoice.buyerReference)}</cbc:BuyerReference>`
+        : "",
+      invoice.purchaseOrderReference
+        ? `  <cac:OrderReference><cbc:ID>${esc(invoice.purchaseOrderReference)}</cbc:ID></cac:OrderReference>`
+        : "",
+      invoice.precedingInvoiceReference
+        ? billingReference(invoice.precedingInvoiceReference)
+        : "",
+      invoice.contractReference
+        ? `  <cac:ContractDocumentReference><cbc:ID>${esc(invoice.contractReference)}</cbc:ID></cac:ContractDocumentReference>`
+        : "",
+      invoice.projectReference
+        ? `  <cac:ProjectReference><cbc:ID>${esc(invoice.projectReference)}</cbc:ID></cac:ProjectReference>`
+        : "",
+      `  <cac:AccountingSupplierParty>${party(invoice.seller)}</cac:AccountingSupplierParty>`,
+      `  <cac:AccountingCustomerParty>${party(invoice.buyer)}</cac:AccountingCustomerParty>`,
+      delivery(invoice),
+      paymentMeans(invoice),
+      `  <cac:PaymentTerms><cbc:Note>${esc(invoice.paymentTerms.toLegalText())}</cbc:Note></cac:PaymentTerms>`,
+      ...invoice.documentCharges.map((c) => documentAllowanceCharge(c, amt)),
+      taxTotal(totals.taxTotal.toXmlString(), totals.vatBreakdown, amt),
+      legalMonetaryTotal(totals, amt),
+      ...invoice.lines.map((line) => invoiceLine(line, amt)),
+    ].filter(Boolean);
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-  <cbc:CustomizationID>urn:cen.eu:en16931:2017</cbc:CustomizationID>
-  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
-  <cbc:ID>${esc(invoice.number)}</cbc:ID>
-  <cbc:IssueDate>${isoDate(invoice.issueDate)}</cbc:IssueDate>${
-    invoice.paymentTerms.dueDate
-      ? `\n  <cbc:DueDate>${isoDate(invoice.paymentTerms.dueDate)}</cbc:DueDate>`
-      : ""
-  }
-  <cbc:InvoiceTypeCode>${invoice.type}</cbc:InvoiceTypeCode>${
-    invoice.notes.map((n) => `\n  <cbc:Note>${esc(n)}</cbc:Note>`).join("")
-  }
-  <cbc:DocumentCurrencyCode>${cur}</cbc:DocumentCurrencyCode>${
-    invoice.buyerReference
-      ? `\n  <cbc:BuyerReference>${esc(invoice.buyerReference)}</cbc:BuyerReference>`
-      : ""
-  }${
-    invoice.purchaseOrderReference
-      ? `\n  <cac:OrderReference><cbc:ID>${esc(invoice.purchaseOrderReference)}</cbc:ID></cac:OrderReference>`
-      : ""
-  }${
-    invoice.deliveryDate
-      ? `\n  <cac:Delivery><cbc:ActualDeliveryDate>${isoDate(invoice.deliveryDate)}</cbc:ActualDeliveryDate></cac:Delivery>`
-      : ""
-  }
-  <cac:AccountingSupplierParty>${party(invoice.seller)}</cac:AccountingSupplierParty>
-  <cac:AccountingCustomerParty>${party(invoice.buyer)}</cac:AccountingCustomerParty>
-  <cac:PaymentMeans>
-    <cbc:PaymentMeansCode>${invoice.paymentTerms.meansCode}</cbc:PaymentMeansCode>${
-      invoice.paymentTerms.iban
-        ? `\n    <cac:PayeeFinancialAccount><cbc:ID>${esc(invoice.paymentTerms.iban)}</cbc:ID></cac:PayeeFinancialAccount>`
-        : ""
-    }
-  </cac:PaymentMeans>
-  <cac:PaymentTerms><cbc:Note>${esc(invoice.paymentTerms.toLegalText())}</cbc:Note></cac:PaymentTerms>
-  <cac:TaxTotal>
-    <cbc:TaxAmount ${amount(totals.taxTotal.toXmlString())}</cbc:TaxAmount>
-${taxSubtotals}
-  </cac:TaxTotal>
-  <cac:LegalMonetaryTotal>
-    <cbc:LineExtensionAmount ${amount(totals.lineTotal.toXmlString())}</cbc:LineExtensionAmount>
-    <cbc:TaxExclusiveAmount ${amount(totals.taxBasisTotal.toXmlString())}</cbc:TaxExclusiveAmount>
-    <cbc:TaxInclusiveAmount ${amount(totals.grandTotal.toXmlString())}</cbc:TaxInclusiveAmount>${
-      totals.allowanceTotal.isZero()
-        ? ""
-        : `\n    <cbc:AllowanceTotalAmount ${amount(totals.allowanceTotal.toXmlString())}</cbc:AllowanceTotalAmount>`
-    }${
-      totals.chargeTotal.isZero()
-        ? ""
-        : `\n    <cbc:ChargeTotalAmount ${amount(totals.chargeTotal.toXmlString())}</cbc:ChargeTotalAmount>`
-    }${
-      totals.paidAmount.isZero()
-        ? ""
-        : `\n    <cbc:PrepaidAmount ${amount(totals.paidAmount.toXmlString())}</cbc:PrepaidAmount>`
-    }
-    <cbc:PayableAmount ${amount(totals.duePayable.toXmlString())}</cbc:PayableAmount>
-  </cac:LegalMonetaryTotal>
-${lines}
+${header.join("\n")}
 </Invoice>
 `;
   }
+}
+
+function billingReference(ref: { number: string; issueDate?: Date }): string {
+  return `  <cac:BillingReference>
+    <cac:InvoiceDocumentReference>
+      <cbc:ID>${esc(ref.number)}</cbc:ID>${
+        ref.issueDate ? `\n      <cbc:IssueDate>${isoDate(ref.issueDate)}</cbc:IssueDate>` : ""
+      }
+    </cac:InvoiceDocumentReference>
+  </cac:BillingReference>`;
+}
+
+function delivery(invoice: Invoice): string {
+  if (!invoice.deliveryDate && !invoice.shipToName) return "";
+  const partyName = invoice.shipToName
+    ? `\n    <cac:DeliveryParty><cac:PartyName><cbc:Name>${esc(invoice.shipToName)}</cbc:Name></cac:PartyName></cac:DeliveryParty>`
+    : "";
+  const date = invoice.deliveryDate
+    ? `\n    <cbc:ActualDeliveryDate>${isoDate(invoice.deliveryDate)}</cbc:ActualDeliveryDate>`
+    : "";
+  return `  <cac:Delivery>${date}${partyName}
+  </cac:Delivery>`;
+}
+
+function paymentMeans(invoice: Invoice): string {
+  const pt = invoice.paymentTerms;
+  const account = pt.iban
+    ? `\n    <cac:PayeeFinancialAccount>
+      <cbc:ID>${esc(pt.iban)}</cbc:ID>${
+        pt.accountHolder ? `\n      <cbc:Name>${esc(pt.accountHolder)}</cbc:Name>` : ""
+      }${
+        pt.bic
+          ? `\n      <cac:FinancialInstitutionBranch><cbc:ID>${esc(pt.bic)}</cbc:ID></cac:FinancialInstitutionBranch>`
+          : ""
+      }
+    </cac:PayeeFinancialAccount>`
+    : "";
+  return `  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>${pt.meansCode}</cbc:PaymentMeansCode>${account}
+  </cac:PaymentMeans>`;
+}
+
+function documentAllowanceCharge(
+  c: DocumentCharge,
+  amt: (n: string) => string,
+): string {
+  const tax = c.taxCategory;
+  return `  <cac:AllowanceCharge>
+    <cbc:ChargeIndicator>${c.isCharge}</cbc:ChargeIndicator>${
+      c.reasonCode ? `\n    <cbc:AllowanceChargeReasonCode>${esc(c.reasonCode)}</cbc:AllowanceChargeReasonCode>` : ""
+    }
+    <cbc:AllowanceChargeReason>${esc(c.reason)}</cbc:AllowanceChargeReason>
+    <cbc:Amount ${amt(c.amount.toXmlString())}</cbc:Amount>
+    <cac:TaxCategory>
+      <cbc:ID>${tax.code}</cbc:ID>
+      <cbc:Percent>${tax.rate}</cbc:Percent>
+      <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+    </cac:TaxCategory>
+  </cac:AllowanceCharge>`;
+}
+
+function taxTotal(
+  taxAmount: string,
+  breakdown: VatBreakdownLine[],
+  amt: (n: string) => string,
+): string {
+  const subtotals = breakdown
+    .map(
+      (v) => `    <cac:TaxSubtotal>
+      <cbc:TaxableAmount ${amt(v.taxableAmount.toXmlString())}</cbc:TaxableAmount>
+      <cbc:TaxAmount ${amt(v.taxAmount.toXmlString())}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>${v.categoryCode}</cbc:ID>
+        <cbc:Percent>${v.rate}</cbc:Percent>${exemption(v.exemptionCode, v.exemptionReason)}
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>`,
+    )
+    .join("\n");
+  return `  <cac:TaxTotal>
+    <cbc:TaxAmount ${amt(taxAmount)}</cbc:TaxAmount>
+${subtotals}
+  </cac:TaxTotal>`;
+}
+
+function legalMonetaryTotal(
+  totals: RenderContext["totals"],
+  amt: (n: string) => string,
+): string {
+  return `  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount ${amt(totals.lineTotal.toXmlString())}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount ${amt(totals.taxBasisTotal.toXmlString())}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount ${amt(totals.grandTotal.toXmlString())}</cbc:TaxInclusiveAmount>${
+      totals.allowanceTotal.isZero()
+        ? ""
+        : `\n    <cbc:AllowanceTotalAmount ${amt(totals.allowanceTotal.toXmlString())}</cbc:AllowanceTotalAmount>`
+    }${
+      totals.chargeTotal.isZero()
+        ? ""
+        : `\n    <cbc:ChargeTotalAmount ${amt(totals.chargeTotal.toXmlString())}</cbc:ChargeTotalAmount>`
+    }${
+      totals.paidAmount.isZero()
+        ? ""
+        : `\n    <cbc:PrepaidAmount ${amt(totals.paidAmount.toXmlString())}</cbc:PrepaidAmount>`
+    }
+    <cbc:PayableAmount ${amt(totals.duePayable.toXmlString())}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>`;
+}
+
+function invoiceLine(line: InvoiceLine, amt: (n: string) => string): string {
+  const net = line.netAmount.toXmlString();
+  const tax = line.taxCategory;
+  const lineAllowance = line.discountAmount
+    ? `\n    <cac:AllowanceCharge>
+      <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
+      <cbc:AllowanceChargeReason>Remise ligne</cbc:AllowanceChargeReason>
+      <cbc:Amount ${amt(line.discountAmount.toXmlString())}</cbc:Amount>
+    </cac:AllowanceCharge>`
+    : "";
+  const details = line.details
+    ? `\n      <cbc:Description>${esc(line.details)}</cbc:Description>`
+    : "";
+  const sellerId = line.sellerAssignedId
+    ? `\n      <cac:SellersItemIdentification><cbc:ID>${esc(line.sellerAssignedId)}</cbc:ID></cac:SellersItemIdentification>`
+    : "";
+  return `  <cac:InvoiceLine>
+    <cbc:ID>${esc(line.id)}</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="${esc(line.unitCode)}">${line.quantity}</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount ${amt(net)}</cbc:LineExtensionAmount>${lineAllowance}
+    <cac:Item>${details}
+      <cbc:Name>${esc(line.description)}</cbc:Name>${sellerId}
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>${tax.code}</cbc:ID>
+        <cbc:Percent>${tax.rate}</cbc:Percent>${exemption(tax.exemptionCode, tax.exemptionReason)}
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount ${amt(line.unitPrice.toXmlString())}</cbc:PriceAmount>
+      <cbc:BaseQuantity unitCode="${esc(line.unitCode)}">1</cbc:BaseQuantity>
+    </cac:Price>
+  </cac:InvoiceLine>`;
 }
 
 function party(p: Party): string {
@@ -145,7 +226,11 @@ function party(p: Party): string {
           a.line2 ? `\n        <cbc:AdditionalStreetName>${esc(a.line2)}</cbc:AdditionalStreetName>` : ""
         }
         <cbc:CityName>${esc(a.city)}</cbc:CityName>
-        <cbc:PostalZone>${esc(a.postalCode)}</cbc:PostalZone>
+        <cbc:PostalZone>${esc(a.postalCode)}</cbc:PostalZone>${
+          a.countrySubdivision
+            ? `\n        <cbc:CountrySubentity>${esc(a.countrySubdivision)}</cbc:CountrySubentity>`
+            : ""
+        }
         <cac:Country><cbc:IdentificationCode>${a.countryCode}</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>${
         p.vatNumber
@@ -159,6 +244,10 @@ function party(p: Party): string {
           p.siren
             ? `\n        <cbc:CompanyID schemeID="0002">${esc(p.siren)}</cbc:CompanyID>`
             : ""
+        }${
+          p.legalInfo
+            ? `\n        <cbc:CompanyLegalForm>${esc(p.legalInfo)}</cbc:CompanyLegalForm>`
+            : ""
         }
       </cac:PartyLegalEntity>${
         p.contact
@@ -170,6 +259,13 @@ function party(p: Party): string {
           : ""
       }
     </cac:Party>`;
+}
+
+function exemption(code?: string, reason?: string): string {
+  const bits: string[] = [];
+  if (code) bits.push(`\n        <cbc:TaxExemptionReasonCode>${esc(code)}</cbc:TaxExemptionReasonCode>`);
+  if (reason) bits.push(`\n        <cbc:TaxExemptionReason>${esc(reason)}</cbc:TaxExemptionReason>`);
+  return bits.join("");
 }
 
 function esc(value: string): string {

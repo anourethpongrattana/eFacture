@@ -7,14 +7,20 @@ import type {
   ValidationIssueReport,
   ValidationReport,
 } from "../../domain/ports/index.js";
+import { validateUblXml } from "./ubl.validator.js";
 
 /**
- * Validation via `@stafyniaksacha/facturx` : XSD (structure) + Schematron
- * (règles métier EN 16931 BR-*). 100 % WebAssembly — aucune JVM requise.
+ * Validation des livrables e-invoice.
+ * - CII / Factur-X : `@stafyniaksacha/facturx` (XSD + Schematron).
+ * - UBL : Schematron CEN/TC 434 via SaxonJS (`ubl.validator.ts`).
  */
 export class FacturxValidator implements EInvoiceValidator {
   async validateCiiXml(xml: string): Promise<ValidationReport> {
     return this.runCheck(xml);
+  }
+
+  async validateUblXml(xml: string): Promise<ValidationReport> {
+    return validateUblXml(xml);
   }
 
   async validateFacturxPdf(pdf: Uint8Array): Promise<ValidationReport> {

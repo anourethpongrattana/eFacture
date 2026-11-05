@@ -39,10 +39,11 @@ Autres commandes : `npm run typecheck`, `npm test`, `npm run build`.
 | `ubl` | XML UBL 2.1 (OASIS) seul | — |
 
 Le paramètre `validate=true` (CLI `--validate`, requête `?validate=true`)
-déclenche une validation **XSD + Schematron EN 16931** du livrable produit
-via [`@stafyniaksacha/facturx`](https://github.com/stafyniaksacha/facturx)
-(100 % WebAssembly, aucune JVM requise). `cii` et `facturx` sont validés ;
-`ubl` ne l'est pas (voir [Limites](#limites-connues-du-poc)).
+déclenche une validation **Schematron EN 16931** du livrable produit
+(100 % JavaScript/WebAssembly, aucune JVM requise) :
+
+- `cii` / `facturx` : XSD + Schematron via [`@stafyniaksacha/facturx`](https://github.com/stafyniaksacha/facturx)
+- `ubl` : Schematron officiel CEN/TC 434 v1.3.17 (artefact dans `vendor/en16931-ubl/`)
 
 ## Architecture (clean architecture)
 
@@ -59,8 +60,8 @@ src/
     application/       schéma d'entrée (zod), mapper JSON → domaine,
                         cas d'usage (GenerateEInvoiceUseCase, ValidateEInvoiceUseCase)
     infrastructure/     adaptateurs concrets : node-zugferd (CII), pdfkit (PDF),
-                        UBL fait main, @stafyniaksacha/facturx (assemblage
-                        Factur-X + validation)
+                        UBL fait main + Schematron CEN, @stafyniaksacha/facturx
+                        (assemblage Factur-X + validation CII)
     config/container.ts composition root (injecte les adaptateurs dans les cas d'usage)
     index.ts            API PUBLIQUE du module
   interfaces/http/       Express : routes, contrôleur, middlewares (dépend de einvoicing/, jamais l'inverse)
@@ -121,19 +122,17 @@ du routage, des statuts de cycle de vie et de l'e-reporting est portée par la
 PA, pas par le logiciel émetteur. Deux nuances à connaître avant de brancher
 une PA en aval :
 
-- **UBL généré ici : conforme EN 16931 générique, pas encore au profil
+- **Les 3 formats sont validés EN 16931 générique, pas encore au profil
   français.** Le socle DGFiP ajoute une extension nationale au-dessus d'EN
   16931 — **CIUS-FR** pour UBL, **Extended-CTC-FR** pour Factur-X/CII —
   portant les règles métier et statuts propres au contrôle continu français
-  (publiée dans les spécifications externes, cf. AFNOR XP Z12-012). Notre
-  validateur (`@stafyniaksacha/facturx`) vérifie l'EN 16931 générique, pas ce
-  profil FR. Un document « valide EN 16931 » n'est donc pas automatiquement
-  « accepté tel quel par une PA française » — à vérifier avec la PA ciblée.
-- **Toute PA doit savoir recevoir les 3 formats, mais Factur-X/CII restent le
-  chemin le plus éprouvé** (héritage Chorus Pro) et sont les deux seuls
-  formats que ce POC valide réellement (XSD + Schematron). L'UBL maison reste
-  documenté comme non validé (cf. Limites connues) : à consolider avant de
-  s'appuyer dessus pour un flux de production.
+  (publiée dans les spécifications externes, cf. AFNOR XP Z12-012). Nos
+  validateurs vérifient l'EN 16931 générique, pas ce profil FR. Un document
+  « valide EN 16931 » n'est donc pas automatiquement « accepté tel quel par
+  une PA française » — à vérifier avec la PA ciblée.
+- **Toute PA doit savoir recevoir les 3 formats.** Factur-X/CII restent le
+  chemin le plus éprouvé (héritage Chorus Pro). L'UBL est désormais validé
+  par le Schematron CEN, mais pas encore par les règles CIUS-FR.
 
 Sources : [economie.gouv.fr — ouverture de l'annuaire](https://www.economie.gouv.fr/actualites/facturation-electronique-ouverture-de-lannuaire-dedie),
 [Pennylane — liste des PA](https://www.pennylane.com/fr/fiches-pratiques/facture-electronique/liste-des-pdp),
@@ -167,8 +166,11 @@ tel quel dans une app qui a déjà sa propre auth, logging, etc.
 ## Limites connues du POC
 
 - **UBL** : sérialiseur maison (`infrastructure/serializers/ubl.serializer.ts`),
-  couvre les BT/BG essentiels mais n'est pas validé par Schematron EN 16931
-  (hors périmètre POC — CII/Factur-X reste le chemin conforme vérifié).
+  validé par le Schematron officiel CEN/TC 434 EN 16931 UBL v1.3.17
+  (`vendor/en16931-ubl/`, exécuté via SaxonJS). Le XSD OASIS UBL 2.1 n'est
+  pas embarqué (schéma CAC trop volumineux) ; les règles UBL-CR-* du
+  Schematron couvrent la cardinalité EN 16931. Régénérer l'artefact compilé :
+  `npm run vendor:ubl`. Le profil français CIUS-FR n'est pas encore appliqué.
 - **`node-zugferd@0.1.0`** (beta) a deux limites contournées explicitement
   dans le code (voir commentaires + `sanitize-cii-xml.ts`) :
   - la remise de ligne (BG-27, `SpecifiedTradeAllowanceCharge`) n'est pas
@@ -205,4 +207,4 @@ npm test
   adaptateurs factices (pas de dépendance aux libs externes).
 - **Intégration** (`tests/integration/`) : génère réellement les 3 formats à
   partir des exemples et valide le résultat (XSD + Schematron EN 16931 pour
-  Factur-X/CII) — aucune lib n'est mockée.
+  Factur-X/CII, Schematron CEN pour UBL) — aucune lib n'est mockée.

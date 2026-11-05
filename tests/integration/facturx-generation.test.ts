@@ -59,15 +59,45 @@ describe("génération e2e (exemples réels, libs réelles)", () => {
     },
   );
 
-  it("produit un XML UBL bien formé pour l'exemple complet", async () => {
+  it("rejette un XML UBL incomplet via le Schematron EN 16931", async () => {
     const einvoicing = createEInvoicingModule();
-    const input = await loadExample("invoice.full.json");
-
-    const result = await einvoicing.generateEInvoice(input, { format: "ubl" });
-
-    expect(result.contentType).toBe("application/xml");
-    const xml = Buffer.from(result.content).toString("utf-8");
-    expect(xml).toContain("<Invoice");
-    expect(xml).toContain("<cbc:ID>F-2026-0142</cbc:ID>");
+    const stub = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>X</cbc:ID>
+</Invoice>`;
+    const report = await einvoicing.validateEInvoice({
+      format: "ubl",
+      content: new TextEncoder().encode(stub),
+    });
+    expect(report.valid).toBe(false);
+    expect(report.schematronValid).toBe(false);
+    expect(report.errors.length).toBeGreaterThan(0);
   });
+
+  it.each(["invoice.minimal.json", "invoice.full.json"])(
+    "produit un XML UBL EN16931 valide pour %s",
+    async (file) => {
+      const einvoicing = createEInvoicingModule();
+      const input = await loadExample(file);
+
+      const result = await einvoicing.generateEInvoice(input, {
+        format: "ubl",
+        validate: true,
+      });
+
+      expect(result.contentType).toBe("application/xml");
+      const xml = Buffer.from(result.content).toString("utf-8");
+      expect(xml).toContain("<Invoice");
+      expect(xml).toContain("urn:oasis:names:specification:ubl:schema:xsd:Invoice-2");
+
+      expect(result.validation).toBeDefined();
+      if (!result.validation!.valid) {
+        console.error(JSON.stringify(result.validation, null, 2));
+      }
+      expect(result.validation!.errors.filter((e) => e.severity !== "warning")).toEqual([]);
+      expect(result.validation!.valid).toBe(true);
+      expect(result.validation!.schematronValid).toBe(true);
+    },
+  );
 });
